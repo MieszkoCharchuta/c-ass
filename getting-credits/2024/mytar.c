@@ -72,7 +72,7 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
         sscanf(header.size, "%o", &size);
 
         // Check for supported typeflag (only regular files)
-        if (header.typeflag != '0' && header.typeflag != '\0') {
+        if (header.typeflag!= '0' && header.typeflag!= '\0') {
             fprintf(stderr, "mytar: Unsupported header type: %d\n", header.typeflag);
             exit(2);
         }
@@ -98,7 +98,18 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
 
         // Seek to next header
         int offset = (size + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE;
-        if (fseek(tar_file, offset, SEEK_CUR) != 0) {
+        if (fseek(tar_file, offset, SEEK_CUR)!= 0) {
+            fprintf(stderr, "mytar: Unexpected EOF in archive\n");
+            fprintf(stderr, "mytar: Error is not recoverable: exiting now\n");
+            exit(2);
+        }
+
+        // Attempt to read the next block to check for unexpected EOF
+        char buffer[BLOCK_SIZE];
+        ssize_t bytesRead = fread(buffer, 1, BLOCK_SIZE, tar_file);
+
+        // Check if we've hit an unexpected EOF
+        if (bytesRead < BLOCK_SIZE) {
             fprintf(stderr, "mytar: Unexpected EOF in archive\n");
             fprintf(stderr, "mytar: Error is not recoverable: exiting now\n");
             exit(2);
