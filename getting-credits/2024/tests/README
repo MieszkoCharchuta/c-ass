@@ -1,3 +1,8 @@
+xport STEF='/home/charchutam/c-prog-lang/stef.sh'
+export GNUTAR="$(which tar)"
+export MYTAR_C='/home/charchutam/c-prog-lang/getting-credits/2024/mytar.c'
+./run-tests.sh $(cat phase-1.tests)
+
 # First, we assume you run the tests in a Unix/Linux environment.  If you do not
 # have such an environment, either figure it out or log in to a Linux machine at
 # the Mala Strana lab.  See http://mff.devnull.cz/c-prog-lang/ for more details.

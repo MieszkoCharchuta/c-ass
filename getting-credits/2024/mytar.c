@@ -61,11 +61,19 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
     struct posix_header header;
     int found_files = 0;
     int *printed_files = (int *)calloc(file_count, sizeof(int));
+    int zero_block_count = 0;
+    long last_valid_block_pos = 0;
 
     ssize_t read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
     while (read_block == BLOCK_SIZE) {
         if (header.name[0] == '\0') {
-            break; // End of archive
+            zero_block_count++;
+            if (zero_block_count == 2) {
+                break; // Valid end of archive
+            }
+        } else {
+            zero_block_count = 0; // Reset zero block count as we have valid data
+            last_valid_block_pos = ftell(tar_file) - BLOCK_SIZE;
         }
 
         // Get file size
@@ -82,7 +90,6 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
         int should_print = 0;
         if (list_files && file_count > 0) {
             for (int i = 0; i < file_count; i++) {
-                // printf("%s", header.name);
                 if (!printed_files[i] && strcmp(files[i], header.name) == 0) {
                     should_print = 1;
                     printed_files[i] = 1;
@@ -105,10 +112,19 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
             fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
             exit(2);
         }
-    
-    read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
-    // fprintf(stdout, "%zd",read_block);
+
+        read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
     }
+
+    // Handle cases where we might have missed the second zero block
+    if (zero_block_count == 1) {
+        fprintf(stdout, "mytar: A lone zero block at %ld\n", last_valid_block_pos / BLOCK_SIZE);
+    } else if (zero_block_count == 0) {
+        fprintf(stdout, "mytar: Unexpected EOF in archive\n");
+        fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
+        exit(2);
+    }
+
     // Print files not found in the archive
     if (list_files && file_count > 0 && found_files < file_count) {
         for (int i = 0; i < file_count; i++) {
@@ -119,22 +135,10 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
         fprintf(stdout, "mytar: Exiting with failure status due to previous errors\n");
         exit(2);
     }
-    // Check if we've hit an unexpected EOF
-    if (read_block < BLOCK_SIZE) {
-            fread(&header, 1, BLOCK_SIZE, tar_file);
-            fread(&header, 1, BLOCK_SIZE, tar_file);
-            fread(&header, 1, BLOCK_SIZE, tar_file);
-            if (header.name[0] == '\0') {
-                exit(0);
-            }
-            else{
-            fprintf(stdout, "mytar: Unexpected EOF in archive\n");
-            fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
-            exit(2);
-            }
-    }
+
     free(printed_files);
 }
+
 
 int main(int argc, char *argv[]) {
     char *archive;
