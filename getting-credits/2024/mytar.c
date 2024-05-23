@@ -26,7 +26,7 @@ struct posix_header {
 
 void parse_arguments(int argc, char *argv[], char **archive, int *list_files, char ***files, int *file_count) {
     if (argc < 3) {
-        fprintf(stderr, "mytar: need at least one option\n");
+        fprintf(stdout, "mytar: need at least one option\n");
         exit(2);
     }
 
@@ -39,7 +39,7 @@ void parse_arguments(int argc, char *argv[], char **archive, int *list_files, ch
             if (i + 1 < argc) {
                 *archive = argv[++i];
             } else {
-                fprintf(stderr, "mytar: option requires an argument -- 'f'\n");
+                fprintf(stdout, "mytar: option requires an argument -- 'f'\n");
                 exit(2);
             }
         } else if (strcmp(argv[i], "-t") == 0) {
@@ -52,7 +52,7 @@ void parse_arguments(int argc, char *argv[], char **archive, int *list_files, ch
     }
 
     if (*archive == NULL) {
-        fprintf(stderr, "mytar: need at least one option\n");
+        fprintf(stdout, "mytar: need at least one option\n");
         exit(2);
     }
 }
@@ -62,7 +62,8 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
     int found_files = 0;
     int *printed_files = (int *)calloc(file_count, sizeof(int));
 
-    while (fread(&header, 1, BLOCK_SIZE, tar_file) == BLOCK_SIZE) {
+    ssize_t read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
+    while (read_block == BLOCK_SIZE) {
         if (header.name[0] == '\0') {
             break; // End of archive
         }
@@ -73,7 +74,7 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
 
         // Check for supported typeflag (only regular files)
         if (header.typeflag != '0' && header.typeflag != '\0') {
-            fprintf(stderr, "mytar: Unsupported header type: %d\n", header.typeflag);
+            fprintf(stdout, "mytar: Unsupported header type: %d\n", header.typeflag);
             exit(2);
         }
 
@@ -81,6 +82,7 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
         int should_print = 0;
         if (list_files && file_count > 0) {
             for (int i = 0; i < file_count; i++) {
+                // printf("%s", header.name);
                 if (!printed_files[i] && strcmp(files[i], header.name) == 0) {
                     should_print = 1;
                     printed_files[i] = 1;
@@ -99,35 +101,41 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
         // Seek to next header
         int offset = (size + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE;
         if (fseek(tar_file, offset, SEEK_CUR) != 0) {
-            fprintf(stderr, "mytar: Unexpected EOF in archive\n");
-            fprintf(stderr, "mytar: Error is not recoverable: exiting now\n");
+            fprintf(stdout, "mytar: Unexpected EOF in archive\n");
+            fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
             exit(2);
         }
-	// Attempt to read the next block to check for unexpected EOF
-        char buffer[BLOCK_SIZE];
-        ssize_t bytesRead = fread(buffer, 1, BLOCK_SIZE, tar_file);
-
-        // Check if we've hit an unexpected EOF
-        if (bytesRead < BLOCK_SIZE) {
-            fprintf(stderr, "mytar: Unexpected EOF in archive\n");
-            fprintf(stderr, "mytar: Error is not recoverable: exiting now\n");
-            exit(2);
+    
+    read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
+    // fprintf(stdout, "%zd",read_block);
     }
-
     // Print files not found in the archive
     if (list_files && file_count > 0 && found_files < file_count) {
         for (int i = 0; i < file_count; i++) {
             if (!printed_files[i]) {
-                fprintf(stderr, "mytar: %s: Not found in archive\n", files[i]);
+                fprintf(stdout, "mytar: %s: Not found in archive\n", files[i]);
             }
         }
-        fprintf(stderr, "mytar: Exiting with failure status due to previous errors\n");
+        fprintf(stdout, "mytar: Exiting with failure status due to previous errors\n");
         exit(2);
     }
-
+    // Check if we've hit an unexpected EOF
+    if (read_block < BLOCK_SIZE) {
+            fread(&header, 1, BLOCK_SIZE, tar_file);
+            fread(&header, 1, BLOCK_SIZE, tar_file);
+            fread(&header, 1, BLOCK_SIZE, tar_file);
+            if (header.name[0] == '\0') {
+                exit(0);
+            }
+            else{
+            fprintf(stdout, "mytar: Unexpected EOF in archive\n");
+            fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
+            exit(2);
+            }
+    }
     free(printed_files);
 }
-}
+
 int main(int argc, char *argv[]) {
     char *archive;
     int list_files;
