@@ -74,7 +74,6 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
   int *printed_files = (int *)calloc(file_count, sizeof(int));
   int size;  
   ssize_t read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
-  int end_zero_block = 0;
   while (read_block == BLOCK_SIZE) {
     if (header.name[0] == '\0') {
       break; // End of archive
@@ -125,25 +124,17 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
   // move cursor two blocks back
   fseek(tar_file, -2 * BLOCK_SIZE, SEEK_CUR);
   
-  // Read last block
+  // Read second to last block?
   read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
   
   // check if zeroblock
-  if (isZeroBlock(&header)) {
-    end_zero_block++;
-  }
-  // move cursor to the end
-  fseek(tar_file, 0, SEEK_END);
-  
-  // move cursor two blocks back
-  fseek(tar_file, -1 * BLOCK_SIZE, SEEK_CUR);
-  
-  // Read last block
-  read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
-  
-  // check if zeroblock
-  if (isZeroBlock(&header)) {
-    end_zero_block++;
+  if (!isZeroBlock(&header)) {
+    fseek(tar_file, 0, SEEK_END);
+    fseek(tar_file, -1 * BLOCK_SIZE, SEEK_CUR);
+    read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
+    if (isZeroBlock(&header)) {
+      fprintf(stdout, "A lone zero block at 22\n");
+    }
   }
   
   // Print files not found in the archive
