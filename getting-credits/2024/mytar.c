@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h> // Include stdbool.h for bool type
 
 #define BLOCK_SIZE 512
 
@@ -23,6 +24,16 @@ struct posix_header {
     char prefix[155];
     char padding[12];
 };
+
+bool isZeroBlock(const struct posix_header *header) {
+    const unsigned char *bytes = (const unsigned char *)header;
+    for (size_t i = 0; i < BLOCK_SIZE; i++) {
+        if (bytes[i] != 0) {
+            return false;
+        }
+    }
+    return true;
+}
 
 void parse_arguments(int argc, char *argv[], char **archive, int *list_files, char ***files, int *file_count) {
     if (argc < 3) {
@@ -61,23 +72,12 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
     struct posix_header header;
     int found_files = 0;
     int *printed_files = (int *)calloc(file_count, sizeof(int));
-    int zero_block_count = 0;
-    long last_valid_block_pos = 0;
-    long current_block_pos = 0;
 
     ssize_t read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
     while (read_block == BLOCK_SIZE) {
         if (header.name[0] == '\0') {
-            zero_block_count++;
-            if (zero_block_count == 2) {
-                break; // Valid end of archive
-            }
-        } else {
-            zero_block_count = 0; // Reset zero block count as we have valid data
-            last_valid_block_pos = current_block_pos;
+            break; // End of archive
         }
-
-        current_block_pos = ftell(tar_file);
 
         // Get file size
         int size;
@@ -105,11 +105,7 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
         }
 
         if (should_print) {
-            printf("%s", header.name);
-            found_files++;
-            if (found_files < file_count) {
-                printf("\n");
-            }
+            printf("%s\n", header.name);
         }
 
         // Seek to next header
@@ -123,16 +119,20 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
         read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
     }
 
-    // Handle cases where we might have missed the second zero block
-    if (zero_block_count == 1) {
-        fprintf(stdout, "mytar: A lone zero block at %ld\n", last_valid_block_pos / BLOCK_SIZE);
-    } else if (zero_block_count == 0 && feof(tar_file)) {
-        // Reached EOF without seeing two zero blocks, but no unexpected data, so we exit without error
-        // Also handle this case silently as the test 014 requires
-    } else if (zero_block_count == 0) {
-        fprintf(stdout, "mytar: Unexpected EOF in archive\n");
-        fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
-        exit(2);
+    // Move cursor to the end
+    fseek(tar_file, 0, SEEK_END);
+
+    // Move cursor two blocks back
+    fseek(tar_file, -2 * BLOCK_SIZE, SEEK_CUR);
+
+    // Read last block
+    read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
+
+    // Check if zeroblock
+    if (isZeroBlock(&header)) {
+        fprintf(stdout, "The block is filled with zeros.\n");
+    } else {
+        fprintf(stdout, "The block is not filled with zeros.\n");
     }
 
     // Print files not found in the archive
@@ -146,9 +146,22 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
         exit(2);
     }
 
+    // Check if we've hit an unexpected EOF
+    if (read_block < BLOCK_SIZE) {
+        fread(&header, 1, BLOCK_SIZE, tar_file);
+        fread(&header, 1, BLOCK_SIZE, tar_file);
+        fread(&header, 1, BLOCK_SIZE, tar_file);
+        if (header.name[0] == '\0') {
+            exit(0);
+        } else {
+            fprintf(stdout, "mytar: Unexpected EOF in archive\n");
+            fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
+            exit(2);
+        }
+    }
+
     free(printed_files);
 }
-
 
 int main(int argc, char *argv[]) {
     char *archive;
@@ -169,3 +182,4 @@ int main(int argc, char *argv[]) {
     fclose(tar_file);
     return 0;
 }
+
