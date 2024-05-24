@@ -72,15 +72,15 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
   struct posix_header header;
   int found_files = 0;
   int *printed_files = (int *)calloc(file_count, sizeof(int));
-  
+  int size;  
   ssize_t read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
+  int end_zero_block = 0;
   while (read_block == BLOCK_SIZE) {
     if (header.name[0] == '\0') {
       break; // End of archive
     }
     
     // Get file size
-    int size;
     sscanf(header.size, "%o", &size);
     
     // Check for supported typeflag (only regular files)
@@ -130,9 +130,20 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
   
   // check if zeroblock
   if (isZeroBlock(&header)) {
-    fprintf(stdout, "The block is filled with zeros.\n");
-  } else {
-    fprintf(stdout, "The block is not filled with zeros.\n");
+    end_zero_block++;
+  }
+  // move cursor to the end
+  fseek(tar_file, 0, SEEK_END);
+  
+  // move cursor two blocks back
+  fseek(tar_file, -1 * BLOCK_SIZE, SEEK_CUR);
+  
+  // Read last block
+  read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
+  
+  // check if zeroblock
+  if (isZeroBlock(&header)) {
+    end_zero_block++;
   }
   
   // Print files not found in the archive
@@ -147,7 +158,8 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
   }
   
   // Check if we've hit an unexpected EOF
-  if (read_block < BLOCK_SIZE) {
+  fseek(tar_file, 0, SEEK_END);
+  if (ftell(tar_file) < size) {
     if (header.name[0] == '\0') {
       exit(0);
     } else {
