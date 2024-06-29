@@ -1,6 +1,6 @@
-export STEF='/home/charchutam/c-prog-lang/stef.sh'
+export STEF='/home/mieszko/c-ass/stef.sh'
 export GNUTAR="$(which tar)"
-export MYTAR_C='/home/charchutam/c-prog-lang/getting-credits/2024/mytar.c'
+export MYTAR_C='/home/mieszko/c-ass/getting-credits/2024/mytar.c'
 ./run-tests.sh $(cat phase-1.tests)
 
 # First, we assume you run the tests in a Unix/Linux environment.  If you do not
