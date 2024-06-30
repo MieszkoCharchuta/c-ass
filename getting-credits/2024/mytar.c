@@ -36,7 +36,7 @@ bool isZeroBlock(const struct posix_header *header) {
   return true;
 }
 
-void parse_arguments(int argc, char *argv[], char **archive, int *list_files, char ***files, int *file_count) {
+void parse_arguments(int argc, char *argv[], char **archive, int *list_files, int *extract_files, int *verbose, char ***files, int *file_count) {
   if (argc < 3) {
     fprintf(stdout, "mytar: need at least one option\n");
     exit(2);
@@ -44,6 +44,8 @@ void parse_arguments(int argc, char *argv[], char **archive, int *list_files, ch
 
   *archive = NULL;
   *list_files = 0;
+  *extract_files = 0;
+  *verbose = 0;
   *file_count = 0;
 
   for (int i = 1; i < argc; i++) {
@@ -56,6 +58,10 @@ void parse_arguments(int argc, char *argv[], char **archive, int *list_files, ch
       }
     } else if (strcmp(argv[i], "-t") == 0) {
       *list_files = 1;
+    } else if (strcmp(argv[i], "-x") == 0) {
+      *extract_files = 1;
+    } else if (strcmp(argv[i], "-v") == 0) {
+      *verbose = 1;
     } else {
       *file_count = argc - i;
       *files = &argv[i];
@@ -67,9 +73,39 @@ void parse_arguments(int argc, char *argv[], char **archive, int *list_files, ch
     fprintf(stdout, "mytar: need at least one option\n");
     exit(2);
   }
+
+  if (*list_files && *extract_files) {
+    fprintf(stdout, "mytar: Cannot specify both -t and -x\n");
+    exit(2);
+  }
 }
 
-void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
+void extract_file(FILE *tar_file, const struct posix_header *header, int size) {
+  FILE *out_file = fopen(header->name, "wb");
+  if (!out_file) {
+    perror("mytar");
+    exit(2);
+  }
+
+  char buffer[BLOCK_SIZE];
+  while (size > 0) {
+    int bytes_to_read = size > BLOCK_SIZE ? BLOCK_SIZE : size;
+    if (fread(buffer, 1, bytes_to_read, tar_file) != bytes_to_read) {
+      fprintf(stdout, "mytar: Unexpected EOF in archive\n");
+      fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
+      exit(2);
+    }
+    if (fwrite(buffer, 1, bytes_to_read, out_file) != bytes_to_read) {
+      perror("mytar");
+      exit(2);
+    }
+    size -= bytes_to_read;
+  }
+
+  fclose(out_file);
+}
+
+void handle_tar(FILE *tar_file, int list_files, int extract_files, int verbose, char **files, int file_count) {
   struct posix_header header;
   int found_files = 0;
   int *printed_files = (int *)calloc(file_count, sizeof(int));
@@ -78,7 +114,6 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
     exit(2);
   }
 
-  // Ensure the posix_header struct does not exceed the block size
   assert(sizeof(header) <= BLOCK_SIZE);
 
   int size;
@@ -86,6 +121,13 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
   while (read_block == BLOCK_SIZE) {
     if (header.name[0] == '\0') {
       break; // End of archive
+    }
+
+    // Validate magic field
+    if (strncmp(header.magic, "ustar", 5) != 0) {
+      fprintf(stdout, "mytar: This does not look like a tar archive\n");
+      fprintf(stdout, "mytar: Exiting with failure status due to previous errors\n");
+      exit(2);
     }
 
     // Get file size
@@ -98,22 +140,29 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
     }
 
     // Check if file is requested
-    int should_print = 0;
-    if (list_files && file_count > 0) {
+    int should_process = 0;
+    if ((list_files || extract_files) && file_count > 0) {
       for (int i = 0; i < file_count; i++) {
         if (!printed_files[i] && strcmp(files[i], header.name) == 0) {
-          should_print = 1;
+          should_process = 1;
           printed_files[i] = 1;
           found_files++;
           break;
         }
       }
     } else {
-      should_print = 1; // Always print when listing all files or no specific files requested
+      should_process = 1; // Always process when listing/extracting all files or no specific files requested
     }
 
-    if (should_print) {
-      printf("%s\n", header.name);
+    if (should_process) {
+      if (list_files) {
+        printf("%s\n", header.name);
+      } else if (extract_files) {
+        if (verbose) {
+          printf("%s\n", header.name);
+        }
+        extract_file(tar_file, &header, size);
+      }
     }
 
     // Seek to next header
@@ -147,7 +196,7 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
   }
 
   // Print files not found in the archive
-  if (list_files && file_count > 0 && found_files < file_count) {
+  if ((list_files || extract_files) && file_count > 0 && found_files < file_count) {
     for (int i = 0; i < file_count; i++) {
       if (!printed_files[i]) {
         fprintf(stdout, "mytar: %s: Not found in archive\n", files[i]);
@@ -157,28 +206,18 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
     exit(2);
   }
 
-  // Check if we've hit an unexpected EOF
-  fseek(tar_file, 0, SEEK_END);
-  if (ftell(tar_file) < size) {
-    if (header.name[0] == '\0') {
-      exit(0);
-    } else {
-      fprintf(stdout, "mytar: Unexpected EOF in archive\n");
-      fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
-      exit(2);
-    }
-  }
-
   free(printed_files);
 }
 
 int main(int argc, char *argv[]) {
   char *archive;
   int list_files;
+  int extract_files;
+  int verbose;
   char **files;
   int file_count;
 
-  parse_arguments(argc, argv, &archive, &list_files, &files, &file_count);
+  parse_arguments(argc, argv, &archive, &list_files, &extract_files, &verbose, &files, &file_count);
 
   FILE *tar_file = fopen(archive, "rb");
   if (!tar_file) {
@@ -186,7 +225,7 @@ int main(int argc, char *argv[]) {
     exit(2);
   }
 
-  handle_tar(tar_file, list_files, files, file_count);
+  handle_tar(tar_file, list_files, extract_files, verbose, files, file_count);
 
   fclose(tar_file);
   return 0;
