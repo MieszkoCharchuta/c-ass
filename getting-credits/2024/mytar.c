@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #define BLOCK_SIZE 512
 
@@ -72,6 +73,14 @@ void handle_tar(FILE *tar_file, int list_files, char **files, int file_count) {
   struct posix_header header;
   int found_files = 0;
   int *printed_files = (int *)calloc(file_count, sizeof(int));
+  if (printed_files == NULL) {
+    perror("mytar: memory allocation failure");
+    exit(2);
+  }
+
+  // Ensure the posix_header struct does not exceed the block size
+  assert(sizeof(header) <= BLOCK_SIZE);
+
   int size;
   ssize_t read_block = fread(&header, 1, BLOCK_SIZE, tar_file);
   while (read_block == BLOCK_SIZE) {
@@ -182,3 +191,4 @@ int main(int argc, char *argv[]) {
   fclose(tar_file);
   return 0;
 }
+
