@@ -207,6 +207,18 @@ void handle_tar(FILE *tar_file, int list_files, int extract_files, int verbose, 
         exit(2);
     }
 
+    // Check if we've hit an unexpected EOF
+  fseek(tar_file, 0, SEEK_END);
+  if (ftell(tar_file) < size) {
+    if (header.name[0] == '\0') {
+      exit(0);
+    } else {
+      fprintf(stdout, "mytar: Unexpected EOF in archive\n");
+      fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
+      exit(2);
+    }
+  }
+	
     free(printed_files);
 }
 
