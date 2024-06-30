@@ -80,6 +80,7 @@ void parse_arguments(int argc, char *argv[], char **archive, int *list_files, in
   }
 }
 
+
 void extract_file(FILE *tar_file, const struct posix_header *header, int size) {
   FILE *out_file = fopen(header->name, "wb");
   if (!out_file) {
@@ -89,7 +90,7 @@ void extract_file(FILE *tar_file, const struct posix_header *header, int size) {
 
   char buffer[BLOCK_SIZE];
   while (size > 0) {
-    int bytes_to_read = size > BLOCK_SIZE ? BLOCK_SIZE : size;
+    size_t bytes_to_read = size > BLOCK_SIZE ? BLOCK_SIZE : size;  // Use size_t for bytes_to_read
     if (fread(buffer, 1, bytes_to_read, tar_file) != bytes_to_read) {
       fprintf(stdout, "mytar: Unexpected EOF in archive\n");
       fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
@@ -99,11 +100,12 @@ void extract_file(FILE *tar_file, const struct posix_header *header, int size) {
       perror("mytar");
       exit(2);
     }
-    size -= bytes_to_read;
+    size -= (int)bytes_to_read;  // Cast bytes_to_read to int before subtracting from size
   }
 
   fclose(out_file);
 }
+
 
 void handle_tar(FILE *tar_file, int list_files, int extract_files, int verbose, char **files, int file_count) {
   struct posix_header header;
