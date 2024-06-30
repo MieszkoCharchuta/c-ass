@@ -133,10 +133,14 @@ void handle_tar(FILE *tar_file, int list_files, int extract_files, int verbose, 
         zero_blocks = 0;
 
         // Validate magic field
-        if (memcmp(header.magic, "ustar", 5) != 0) {
-            fprintf(stdout, "mytar: This does not look like a tar archive\n");
-            fprintf(stdout, "mytar: Exiting with failure status due to previous errors\n");
-            exit(2);
+        if (memcmp(header.magic, "ustar", 5) != 0 && memcmp(header.magic, "ustar ", 6) != 0) {
+            if (ftell(tar_file) == BLOCK_SIZE) {
+                fprintf(stdout, "mytar: This does not look like a tar archive\n");
+                fprintf(stdout, "mytar: Exiting with failure status due to previous errors\n");
+                exit(2);
+            }
+            // If not at the beginning, it might be file data. Skip this block.
+            continue;
         }
 
         // Get file size
@@ -148,7 +152,7 @@ void handle_tar(FILE *tar_file, int list_files, int extract_files, int verbose, 
             exit(2);
         }
 
-        // Check if file is requested
+        // Process the file
         int should_process = 0;
         if ((list_files || extract_files) && file_count > 0) {
             for (int i = 0; i < file_count; i++) {
@@ -160,7 +164,7 @@ void handle_tar(FILE *tar_file, int list_files, int extract_files, int verbose, 
                 }
             }
         } else {
-            should_process = 1; // Always process when listing/extracting all files or no specific files requested
+            should_process = 1;
         }
 
         if (should_process) {
@@ -173,7 +177,7 @@ void handle_tar(FILE *tar_file, int list_files, int extract_files, int verbose, 
                 extract_file(tar_file, &header, size);
             }
         } else {
-            // Skip to next header
+            // Skip file data
             if (fseek(tar_file, (size + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE, SEEK_CUR) != 0) {
                 fprintf(stdout, "mytar: Unexpected EOF in archive\n");
                 fprintf(stdout, "mytar: Error is not recoverable: exiting now\n");
